@@ -25,4 +25,6 @@ jobs:
 
       - name: Run Telegram Bot
         timeout-minutes: 350
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
         run: python bot.py
