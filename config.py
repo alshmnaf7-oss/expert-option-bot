@@ -1,9 +1,8 @@
-# إعدادات بوت توصيات Expert Option
+import os
 
-# ضع توكن البوت الذي نسخته من BotFather هنا بين القوسين
-BOT_TOKEN = "8770286973:AAEzq01P3Ytmf1SlmRZ9ODOyPGLqxSNMjHo"
+# Telegram Bot Token securely read from Environment variable
+BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 
-# قائمة الأسواق والأزواج المتاحة ورموزها العالمية
 MARKETS = {
     "🇪🇺/🇺🇸 EUR/USD": "EURUSD=X",
     "🇬🇧/🇺🇸 GBP/USD": "GBPUSD=X",
@@ -15,12 +14,10 @@ MARKETS = {
     "💎 الإيثيريوم (ETH/USD)": "ETH-USD"
 }
 
-# مدد الصفقات المتاحة
 TIMEFRAMES = {
     "⏱ 1 دقيقة": "1m",
     "⏱ 2 دقيقة": "2m",
     "⏱ 5 دقائق": "5m"
 }
 
-# معيار فحص التذبذب (إذا كان مؤشر ADX أقل من 22، فالسوق في تذبذب)
 ADX_RANGING_THRESHOLD = 22
