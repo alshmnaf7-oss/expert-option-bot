@@ -1,6 +1,9 @@
 import sys
 import asyncio
 import logging
+import os
+import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
 
 # ضبط ترميز الطرفية في ويندوز لدعم نصوص UTF-8
 if sys.platform == "win32":
@@ -13,19 +16,14 @@ if sys.platform == "win32":
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.error import BadRequest
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
-from config import BOT_TOKEN, MARKETS, TIMEFRAMES
+from config import BOT_TOKEN, MARKETS, TIMEFRAMES, ADX_RANGING_THRESHOLD
 from analysis import analyze_market
 
-# إعداد التسجيل والمراقبة للأخطاء
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
-
-import os
-import threading
-from http.server import HTTPServer, BaseHTTPRequestHandler
 
 class HealthCheckHandler(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -45,11 +43,10 @@ def start_health_server():
     except Exception as e:
         logger.warning(f"Health server info: {e}")
 
-# تشغيل سيرفر فحص الصحة في الخلفية ليتوافق مع جميع السيرفرات السحابية
 threading.Thread(target=start_health_server, daemon=True).start()
 
 def get_markets_keyboard():
-    """توليد لوحة أزرار الأسواق بشكل منظم"""
+    """توليد لوحة أزرار الأسواق بشكل منظم وسهل التصفح"""
     keyboard = []
     row = []
     for name in MARKETS.keys():
@@ -62,12 +59,16 @@ def get_markets_keyboard():
     return InlineKeyboardMarkup(keyboard)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """عرض رسالة الترحيب وقائمة الأسواق"""
+    """عرض رسالة الترحيب وقائمة الأسواق الموسعة"""
     reply_markup = get_markets_keyboard()
     welcome_text = (
-        "🤖 *بوت توصيات تداول Expert Option*\n\n"
-        "👋 مرحباً بك! يحلل هذا البوت حركة الشموع الحية ويكتشف مناطق التذبذب وقوة الاتجاه لاقتراح أفضل توقيت للدخول.\n\n"
-        "📊 *اختر السوق أو الزوج الذي ترغب بتحليله:*"
+        "🤖 *بوت توصيات تداول Expert Option (الإصدار الاحترافي V2.0)*\n\n"
+        "👋 مرحباً بك! تم تحديث البوت بمحرك تحليل عالي الدقة يدمج:\n"
+        "• مؤشر ADX المطور (عتبة 25 لإلغاء أي تذبذب)\n"
+        "• فحص وتأكيد اتجاه الشموع الحية (Price Action)\n"
+        "• مؤشرات الزخم المزدوجة (RSI + Stochastic)\n"
+        "• تنبيهات انتهاء مدة الصفقة التلقائية ⏳\n\n"
+        "📊 *اختر السوق أو الزوج الذي ترغب ببدء تحليله:*"
     )
 
     if update.callback_query:
@@ -84,15 +85,48 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     reply_markup=reply_markup,
                     parse_mode="Markdown"
                 )
-    elif update.message:
+    else:
         await update.message.reply_text(
             welcome_text,
             reply_markup=reply_markup,
             parse_mode="Markdown"
         )
 
+async def notify_trade_finished(context: ContextTypes.DEFAULT_TYPE):
+    """دالة التنبيه التلقائي بانتهاء مدة الصفقة بدقة بالثواني"""
+    job_data = context.job.data
+    chat_id = job_data["chat_id"]
+    market_name = job_data["market_name"]
+    tf_code = job_data["tf_code"]
+    signal = job_data["signal"]
+
+    action_buttons = [
+        [InlineKeyboardButton("🔄 فحص نفس السوق لصفقة جديدة", callback_data=f"tf:{tf_code}")],
+        [InlineKeyboardButton("📊 اختيار سوق آخر", callback_data="back_to_markets")]
+    ]
+    reply_markup = InlineKeyboardMarkup(action_buttons)
+
+    finished_msg = (
+        "⏰ *انتهت مدة الصفقة الآن!* 🏁\n\n"
+        f"🔹 *الزوج:* `{market_name}`\n"
+        f"⏱ *المدة المنتهية:* `{tf_code}`\n"
+        f"📢 *الصفقة السابقة:* {signal}\n\n"
+        "💡 *الخطوة التالية:*\n"
+        "اضغط على زر *إعادة الفحص* بالأسفل لمعرفة وضع الشمعة الجديدة وما إذا كانت هناك فرصة دخول مؤكدة أخرى!"
+    )
+
+    try:
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=finished_msg,
+            reply_markup=reply_markup,
+            parse_mode="Markdown"
+        )
+    except Exception as e:
+        logger.error(f"Error sending finished notification: {e}")
+
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """معالجة كافة نقرات الأزرار من المستخدم بسلاسة ودون تجميد"""
+    """معالجة جميع الأزرار التفاعلية بدقة وسرعة"""
     query = update.callback_query
     try:
         await query.answer()
@@ -102,12 +136,12 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = query.data
 
     try:
-        # 1. المستخدم ضغط رجوع للأسواق
+        # 1. رجوع للأسواق
         if data == "back_to_markets":
             await start(update, context)
             return
 
-        # 2. المستخدم اختار السوق
+        # 2. اختيار السوق
         if data.startswith("market:"):
             market_name = data.split("market:")[1]
             context.user_data["selected_market"] = market_name
@@ -115,41 +149,41 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             keyboard = []
             for tf_name, tf_code in TIMEFRAMES.items():
                 keyboard.append([InlineKeyboardButton(tf_name, callback_data=f"tf:{tf_code}")])
-            keyboard.append([InlineKeyboardButton("🔙 رجوع لاختيار سوق آخر", callback_data="back_to_markets")])
+            keyboard.append([InlineKeyboardButton("🔙 رجوع لقائمة الأسواق", callback_data="back_to_markets")])
 
             reply_markup = InlineKeyboardMarkup(keyboard)
             await query.edit_message_text(
                 f"📊 *السوق المختار:* `{market_name}`\n\n"
-                "⏱ حدد *مدة الصفقة* لبدء فحص الشموع والمؤشرات:",
+                "⏱ حدد *مدة الصفقة* لبدء فحص الشموع الحية وتأكيد الإشارة:",
                 reply_markup=reply_markup,
                 parse_mode="Markdown"
             )
             return
 
-        # 3. المستخدم اختار مدة الصفقة أو ضغط إعادة فحص
+        # 3. اختيار الفريم أو إعادة الفحص
         if data.startswith("tf:"):
             tf_code = data.split("tf:")[1]
             market_name = context.user_data.get("selected_market", "🇪🇺/🇺🇸 EUR/USD")
             symbol = MARKETS.get(market_name, "EURUSD=X")
 
-            # رسالة انتظار تفاعلية
             try:
                 await query.edit_message_text(
-                    f"⏳ *جاري تحليل السوق...*\n\n"
+                    f"⏳ *جاري سحب الشموع الحية وتحليل الزخم...*\n\n"
                     f"🔹 الزوج: `{market_name}`\n"
                     f"⏱ الفريم: `{tf_code}`\n\n"
-                    "يرجى الانتظار ثوانٍ لسحب الشموع الحية وفحص التذبذب..."
+                    "• فحص قوة الاتجاه ADX (معيار الأمان 25)\n"
+                    "• فحص تأكيد شمعة الـ Price Action\n"
+                    "• حساب توافق RSI و Stochastic..."
                 )
             except BadRequest:
                 pass
 
-            # تشغيل التحليل في Thread منفصل مع مهلة زمنية صارمة (10 ثوانٍ) لمنع أي تعليق نهائياً
             try:
-                result = await asyncio.wait_for(asyncio.to_thread(analyze_market, symbol, tf_code), timeout=10.0)
+                result = await asyncio.wait_for(asyncio.to_thread(analyze_market, symbol, tf_code), timeout=12.0)
             except asyncio.TimeoutError:
                 result = {
                     "status": "error",
-                    "message": "استغرق جلب بيانات السوق وقتاً أطول من المعتاد. اضغط على زر إعادة الفحص للمحاولة مجدداً."
+                    "message": "استغرق جلب بيانات الشموع وقتاً أطول من المعتاد. اضغط على إعادة الفحص للمحاولة مجدداً."
                 }
             except Exception as e:
                 result = {
@@ -157,14 +191,13 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     "message": f"حدث خطأ أثناء فحص البيانات: {str(e)}"
                 }
 
-            # أزرار الإجراء بعد انتهاء التحليل
             action_buttons = [
                 [InlineKeyboardButton("🔄 إعادة فحص نفس السوق", callback_data=f"tf:{tf_code}")],
                 [InlineKeyboardButton("📊 اختيار سوق آخر", callback_data="back_to_markets")]
             ]
             reply_markup = InlineKeyboardMarkup(action_buttons)
 
-            # حالة حدوث خطأ في سحب البيانات
+            # حالة الخطأ
             if result.get("status") == "error":
                 await query.edit_message_text(
                     f"❌ *تنبيه:*\n{result['message']}",
@@ -173,42 +206,61 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
                 return
 
-            # حالة السوق في تذبذب
+            # حالة التذبذب
             if result.get("status") == "ranging":
                 ranging_msg = (
                     "⚠️ *تنبيه: السوق في حالة تذبذب حالياً!* ⚠️\n\n"
                     f"🔹 *الزوج:* `{market_name}`\n"
                     f"⏱ *الفريم:* `{tf_code}`\n"
-                    f"📉 *قوة الاتجاه (ADX):* `{result['adx']}` (أقل من 22 ❌)\n"
+                    f"📉 *قوة الاتجاه (ADX):* `{result['adx']}` (أقل من {ADX_RANGING_THRESHOLD} ❌)\n"
                     f"📊 *مؤشر الزخم (RSI):* `{result['rsi']}`\n\n"
                     "🚫 *القرار والتحليل:*\n"
-                    "حركة السعر تسير في نطاق عرضي عشوائي، لا يوجد اتجاه صاعد أو هابط واضح.\n\n"
-                    "👉 *يُنصح بعدم دخول أي صفقة في هذا التوقيت لتجنب الخسارة.*"
+                    "السعر يتحرك بشكل عرضي تذبذبي عالي المخاطر.\n\n"
+                    "👉 *تجنب الدخول في هذا التوقيت نهائياً لحماية رصيدك.*"
                 )
                 try:
                     await query.edit_message_text(ranging_msg, reply_markup=reply_markup, parse_mode="Markdown")
                 except BadRequest as e:
                     if "Message is not modified" in str(e):
-                        await query.answer("تم تحديث البيانات: السوق لا يزال في حالة تذبذب.")
+                        await query.answer("تم التحديث: السوق لا يزال متذبذباً.")
 
-            # حالة وجود اتجاه وفرصة دخول
+            # حالة وجود اتجاه
             else:
+                signal_str = result['signal']
                 signal_msg = (
-                    "🎯 *توصية تداول - Expert Option*\n\n"
+                    "🎯 *توصية تداول عالية الدقة - Expert Option*\n\n"
                     f"🔹 *الزوج:* `{market_name}`\n"
                     f"⏱ *مدة الصفقة:* `{tf_code}`\n"
-                    f"📢 *الإشارة:* *{result['signal']}*\n"
+                    f"📢 *الإشارة:* *{signal_str}*\n"
                     f"💪 *قوة الفرصة:* `{result['strength']}`\n"
                     f"📉 *مؤشر ADX:* `{result['adx']}`\n"
                     f"📊 *مؤشر RSI:* `{result['rsi']}`\n\n"
-                    f"💡 *التوجيه:* {result['tip']}\n\n"
-                    "⚠️ _تذكير: التداول ينطوي على مخاطر، التزم دائماً بإدارة رأس المال._"
+                    f"💡 *التوجيه الاحترافي:* {result['tip']}\n\n"
+                    "⏳ _تم تشغيل مؤقت الصفقة تلقائياً، وسيرسل لك البوت تنبيهاً فور انتهائها._"
                 )
                 try:
                     await query.edit_message_text(signal_msg, reply_markup=reply_markup, parse_mode="Markdown")
                 except BadRequest as e:
                     if "Message is not modified" in str(e):
-                        await query.answer("تم تحديث البيانات: الإشارة الحالية لا تزال مستمرة.")
+                        await query.answer("تم التحديث: الإشارة لا تزال مستمرة.")
+
+                # تشغيل مؤقت التنبيه بانتهاء الصفقة إذا كانت التوصية صعود أو هبوط حقيقيين
+                if "CALL" in signal_str or "PUT" in signal_str:
+                    seconds_map = {"1m": 60, "2m": 120, "5m": 300}
+                    wait_seconds = seconds_map.get(tf_code, 60)
+                    chat_id = query.message.chat_id
+
+                    # جدولة إشعار انتهاء الصفقة
+                    context.job_queue.run_once(
+                        notify_trade_finished,
+                        when=wait_seconds,
+                        data={
+                            "chat_id": chat_id,
+                            "market_name": market_name,
+                            "tf_code": tf_code,
+                            "signal": signal_str
+                        }
+                    )
 
     except Exception as err:
         logger.error(f"خطأ أثناء معالجة الزر: {err}", exc_info=True)
@@ -221,7 +273,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             pass
 
 def main():
-    if not BOT_TOKEN or "ضع_التوكن" in BOT_TOKEN:
+    if not BOT_TOKEN:
         print("ERROR: BOT_TOKEN is missing in config.py")
         return
 
@@ -229,7 +281,7 @@ def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(handle_callback))
 
-    print("\nBot is running successfully with concurrent updates enabled! Open Telegram and send /start")
+    print("\nBot V2.0 is running successfully! Open Telegram and send /start")
     app.run_polling()
 
 if __name__ == "__main__":
