@@ -18,6 +18,7 @@ from telegram.error import BadRequest
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 from config import BOT_TOKEN, MARKETS, TIMEFRAMES, ADX_RANGING_THRESHOLD
 from analysis import analyze_market
+from market_scanner import scan_best_markets
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -46,8 +47,10 @@ def start_health_server():
 threading.Thread(target=start_health_server, daemon=True).start()
 
 def get_markets_keyboard():
-    """توليد لوحة أزرار الأسواق بشكل منظم وسهل التصفح"""
-    keyboard = []
+    """توليد لوحة أزرار الأسواق مع زر المسح السحري لأفضل الأسواق في القمة"""
+    keyboard = [
+        [InlineKeyboardButton("🔥 أفضل الأسواق للتداول الآن (فرص مؤكدة) 🔥", callback_data="scan_best")]
+    ]
     row = []
     for name in MARKETS.keys():
         row.append(InlineKeyboardButton(name, callback_data=f"market:{name}"))
@@ -59,16 +62,13 @@ def get_markets_keyboard():
     return InlineKeyboardMarkup(keyboard)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """عرض رسالة الترحيب وقائمة الأسواق الموسعة"""
+    """عرض رسالة الترحيب وقائمة الأسواق"""
     reply_markup = get_markets_keyboard()
     welcome_text = (
         "🤖 *بوت توصيات تداول Expert Option (الإصدار الاحترافي V2.0)*\n\n"
-        "👋 مرحباً بك! تم تحديث البوت بمحرك تحليل عالي الدقة يدمج:\n"
-        "• مؤشر ADX المطور (عتبة 25 لإلغاء أي تذبذب)\n"
-        "• فحص وتأكيد اتجاه الشموع الحية (Price Action)\n"
-        "• مؤشرات الزخم المزدوجة (RSI + Stochastic)\n"
-        "• تنبيهات انتهاء مدة الصفقة التلقائية ⏳\n\n"
-        "📊 *اختر السوق أو الزوج الذي ترغب ببدء تحليله:*"
+        "👋 مرحباً بك! لتوفير وقتك وجهدك، يمكنك الآن الضغط على زر:\n"
+        "👉 *[🔥 أفضل الأسواق للتداول الآن]* لفحص كل الأسواق في ثوانٍ وإظهار الأزواج الجاهزة فقط!\n\n"
+        "أو اختر السوق الذي ترغب به مباشرة من القائمة بالأسفل:"
     )
 
     if update.callback_query:
@@ -93,7 +93,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 async def notify_trade_finished(context: ContextTypes.DEFAULT_TYPE):
-    """دالة التنبيه التلقائي بانتهاء مدة الصفقة بدقة بالثواني"""
+    """دالة التنبيه التلقائي بانتهاء مدة الصفقة"""
     job_data = context.job.data
     chat_id = job_data["chat_id"]
     market_name = job_data["market_name"]
@@ -102,6 +102,7 @@ async def notify_trade_finished(context: ContextTypes.DEFAULT_TYPE):
 
     action_buttons = [
         [InlineKeyboardButton("🔄 فحص نفس السوق لصفقة جديدة", callback_data=f"tf:{tf_code}")],
+        [InlineKeyboardButton("🔥 أفضل الأسواق للتداول الآن", callback_data="scan_best")],
         [InlineKeyboardButton("📊 اختيار سوق آخر", callback_data="back_to_markets")]
     ]
     reply_markup = InlineKeyboardMarkup(action_buttons)
@@ -112,7 +113,7 @@ async def notify_trade_finished(context: ContextTypes.DEFAULT_TYPE):
         f"⏱ *المدة المنتهية:* `{tf_code}`\n"
         f"📢 *الصفقة السابقة:* {signal}\n\n"
         "💡 *الخطوة التالية:*\n"
-        "اضغط على زر *إعادة الفحص* بالأسفل لمعرفة وضع الشمعة الجديدة وما إذا كانت هناك فرصة دخول مؤكدة أخرى!"
+        "اضغط على زر *إعادة الفحص* أو *أفضل الأسواق* لمعرفة الفرصة القادمة مباشرة!"
     )
 
     try:
@@ -126,7 +127,7 @@ async def notify_trade_finished(context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"Error sending finished notification: {e}")
 
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """معالجة جميع الأزرار التفاعلية بدقة وسرعة"""
+    """معالجة جميع الأزرار التفاعلية"""
     query = update.callback_query
     try:
         await query.answer()
@@ -141,7 +142,64 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await start(update, context)
             return
 
-        # 2. اختيار السوق
+        # 2. ميزة فحص أفضل الأسواق الآن (Smart Scanner)
+        if data == "scan_best":
+            try:
+                await query.edit_message_text(
+                    "🔍 *جاري مسح جميع الأسواق الحية بالتوازي...*\n\n"
+                    "• فحص سوق Smarty وكافة العملات والأسهم ⚡\n"
+                    "• فرز الأسواق المتذبذبة واستبعادها 🚫\n"
+                    "• استخراج أقوى الفرص المؤكدة فقط 🌟\n\n"
+                    "_يرجى الانتظار بضع ثوانٍ..._"
+                )
+            except BadRequest:
+                pass
+
+            try:
+                opportunities = await asyncio.wait_for(
+                    asyncio.to_thread(scan_best_markets, "1m"),
+                    timeout=15.0
+                )
+            except Exception as e:
+                logger.error(f"Scanner error: {e}")
+                opportunities = []
+
+            if not opportunities:
+                no_msg = (
+                    "⚠️ *تنبيه المسح الذكي:*\n\n"
+                    "معظم الأسواق حالياً تمر بفترة تذبذب عرضي ضعيف ولا تحقق شروط الدخول الآمنة بنسبة 100%.\n\n"
+                    "💡 *نصيحة لحماية رصيدك:* انتظر بضع دقائق واضغط على زر إعادة المسح أو اختر سوقاً مفضلاً يدوياً."
+                )
+                buttons = [
+                    [InlineKeyboardButton("🔄 إعادة مسح الأسواق الآن", callback_data="scan_best")],
+                    [InlineKeyboardButton("📊 اختيار سوق يدوياً", callback_data="back_to_markets")]
+                ]
+                await query.edit_message_text(no_msg, reply_markup=InlineKeyboardMarkup(buttons), parse_mode="Markdown")
+                return
+
+            # عرض أفضل الأسواق مع أزرار مباشرة لاختيارها فوراً
+            msg_lines = [
+                "🔥 *أفضل الأسواق المهيأة للتداول الآن (فرص مؤكدة):*\n",
+                "تم فحص جميع الأسواق واستخراج الأزواج ذات الاتجاه الأقوى والزخم المتوافق:\n"
+            ]
+            scanner_buttons = []
+            for item in opportunities[:5]: # عرض أفضل 5 أسواق
+                msg_lines.append(
+                    f"🔹 *{item['name']}*\n"
+                    f"   ├ الإشارة: *{item['signal']}*\n"
+                    f"   ├ القوة: `{item['strength']}`\n"
+                    f"   └ قوة الاتجاه (ADX): `{item['adx']}`\n"
+                )
+                scanner_buttons.append([InlineKeyboardButton(f"🚀 تداول في {item['name']}", callback_data=f"market:{item['name']}")])
+
+            scanner_buttons.append([InlineKeyboardButton("🔄 تحديث قائمة أفضل الأسواق", callback_data="scan_best")])
+            scanner_buttons.append([InlineKeyboardButton("🔙 رجوع للقائمة الكاملة", callback_data="back_to_markets")])
+
+            msg_text = "\n".join(msg_lines)
+            await query.edit_message_text(msg_text, reply_markup=InlineKeyboardMarkup(scanner_buttons), parse_mode="Markdown")
+            return
+
+        # 3. اختيار السوق
         if data.startswith("market:"):
             market_name = data.split("market:")[1]
             context.user_data["selected_market"] = market_name
@@ -160,11 +218,11 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return
 
-        # 3. اختيار الفريم أو إعادة الفحص
+        # 4. اختيار الفريم أو إعادة الفحص
         if data.startswith("tf:"):
             tf_code = data.split("tf:")[1]
-            market_name = context.user_data.get("selected_market", "🇪🇺/🇺🇸 EUR/USD")
-            symbol = MARKETS.get(market_name, "EURUSD=X")
+            market_name = context.user_data.get("selected_market", "🤖 Smarty")
+            symbol = MARKETS.get(market_name, "AIQ")
 
             try:
                 await query.edit_message_text(
@@ -193,6 +251,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             action_buttons = [
                 [InlineKeyboardButton("🔄 إعادة فحص نفس السوق", callback_data=f"tf:{tf_code}")],
+                [InlineKeyboardButton("🔥 أفضل الأسواق للتداول الآن", callback_data="scan_best")],
                 [InlineKeyboardButton("📊 اختيار سوق آخر", callback_data="back_to_markets")]
             ]
             reply_markup = InlineKeyboardMarkup(action_buttons)
@@ -244,13 +303,12 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     if "Message is not modified" in str(e):
                         await query.answer("تم التحديث: الإشارة لا تزال مستمرة.")
 
-                # تشغيل مؤقت التنبيه بانتهاء الصفقة إذا كانت التوصية صعود أو هبوط حقيقيين
+                # تشغيل مؤقت التنبيه بانتهاء الصفقة
                 if "CALL" in signal_str or "PUT" in signal_str:
                     seconds_map = {"1m": 60, "2m": 120, "5m": 300}
                     wait_seconds = seconds_map.get(tf_code, 60)
                     chat_id = query.message.chat_id
 
-                    # جدولة إشعار انتهاء الصفقة
                     context.job_queue.run_once(
                         notify_trade_finished,
                         when=wait_seconds,
