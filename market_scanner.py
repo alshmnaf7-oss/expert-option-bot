@@ -5,13 +5,14 @@ from config import MARKETS
 
 def scan_best_markets(interval: str = "1m") -> list:
     """
-    فحص جميع الأسواق بالتوازي وجلب أفضل الأسواق المهيأة للتداول الآن
-    مع ترتيبها بحسب قوة الاتجاه والفرصة الذهبية
+    فحص جميع الأسواق المفتوحة والنشطة حالياً بالتوازي
+    واستخراج الأسواق التي بها فرص دخول صريحة وغير مغلقة
     """
     best_opportunities = []
 
     def check_one(name, symbol):
         res = analyze_market(symbol, interval)
+        # نستبعد الأسواق المغلقة أو التي بها خطأ أو تذبذب
         if res.get("status") == "trend" and ("CALL" in res.get("signal", "") or "PUT" in res.get("signal", "")):
             return {
                 "name": name,
@@ -34,6 +35,5 @@ def scan_best_markets(interval: str = "1m") -> list:
             except Exception:
                 pass
 
-    # ترتيب الفرص بحيث تكون الفرص الذهبية والأعلى ADX في المقدمة
     best_opportunities.sort(key=lambda x: (1 if "فرصة ذهبية" in x["strength"] else 0, x["adx"]), reverse=True)
     return best_opportunities
