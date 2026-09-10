@@ -6,6 +6,10 @@ BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "8770286973:AAHswe11b03wjkyGcym
 
 # قائمة الأسواق والأزواج المتاحة ورموزها العالمية (موسعة لتشمل أهم أزواج Expert Option)
 MARKETS = {
+    # مؤشر Smarty وسلة التكنولوجيا والذكاء الاصطناعي (AI & Tech)
+    "🤖 مؤشر سمارتي (Smarty AI Tech)": "AIQ",
+    "⚡ مؤشر الروبوتات والذكاء (BOTZ)": "BOTZ",
+
     # العملات الرئيسية (Forex)
     "🇪🇺/🇺🇸 EUR/USD": "EURUSD=X",
     "🇬🇧/🇺🇸 GBP/USD": "GBPUSD=X",
@@ -22,7 +26,7 @@ MARKETS = {
     "💎 الإيثيريوم (ETH/USD)": "ETH-USD",
     "☀️ سولانا (SOL/USD)": "SOL-USD",
 
-    # الأسهم والشركات العالمية الأكثر تداولاً في Expert Option
+    # الأسهم والشركات العالمية في Expert Option
     "🍏 سهم أبل (Apple)": "AAPL",
     "🚗 سهم تسلا (Tesla)": "TSLA",
     "📦 سهم أمازون (Amazon)": "AMZN",
@@ -36,5 +40,5 @@ TIMEFRAMES = {
     "⏱ 5 دقائق": "5m"
 }
 
-# معيار فحص التذبذب المحدث (رفعناه من 22 إلى 25 لتصفية أي تذبذب وحماية الأرباح)
+# معيار فحص التذبذب المحدث (25)
 ADX_RANGING_THRESHOLD = 25
