@@ -65,7 +65,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """عرض رسالة الترحيب وقائمة الأسواق"""
     reply_markup = get_markets_keyboard()
     welcome_text = (
-        "🤖 *بوت توصيات تداول Expert Option (الإصدار الاحترافي V2.1)*\n\n"
+        "🤖 *بوت توصيات تداول Expert Option (الإصدار الاحترافي V2.2)*\n\n"
         "👋 مرحباً بك! لاختيار أفضل صفقة جاهزة الآن اضغط على:\n"
         "👉 *[🔥 أفضل الأسواق للتداول الآن]*\n\n"
         "أو اختر السوق مباشرة من القائمة بالأسفل:"
@@ -92,13 +92,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="Markdown"
         )
 
-async def notify_trade_finished(context: ContextTypes.DEFAULT_TYPE):
-    """دالة التنبيه التلقائي بانتهاء مدة الصفقة"""
-    job_data = context.job.data
-    chat_id = job_data["chat_id"]
-    market_name = job_data["market_name"]
-    tf_code = job_data["tf_code"]
-    signal = job_data["signal"]
+async def delayed_trade_finish(bot, chat_id: int, market_name: str, tf_code: str, signal: str, wait_seconds: int):
+    """مؤقت غير متزامن مستقل وآمن 100% لإرسال تنبيه انتهاء الصفقة بدون الحاجة لـ JobQueue"""
+    await asyncio.sleep(wait_seconds)
 
     action_buttons = [
         [InlineKeyboardButton("🔄 فحص نفس السوق لصفقة جديدة", callback_data=f"tf:{tf_code}:{market_name}")],
@@ -117,7 +113,7 @@ async def notify_trade_finished(context: ContextTypes.DEFAULT_TYPE):
     )
 
     try:
-        await context.bot.send_message(
+        await bot.send_message(
             chat_id=chat_id,
             text=finished_msg,
             reply_markup=reply_markup,
@@ -127,7 +123,7 @@ async def notify_trade_finished(context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"Error sending finished notification: {e}")
 
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """معالجة جميع الأزرار التفاعلية بدقة وموثوقية تامة"""
+    """معالجة جميع الأزرار التفاعلية بدقة وموثوقية تامة وبدون أي أخطاء"""
     query = update.callback_query
     try:
         await query.answer()
@@ -189,7 +185,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     f"   ├ القوة: `{item['strength']}`\n"
                     f"   └ قوة الاتجاه (ADX): `{item['adx']}`\n"
                 )
-                # ربط الزر مباشرة بالسوق المحدد
                 scanner_buttons.append([InlineKeyboardButton(f"🚀 تداول في {item['name']}", callback_data=f"market:{item['name']}")])
 
             scanner_buttons.append([InlineKeyboardButton("🔄 تحديث قائمة أفضل الأسواق", callback_data="scan_best")])
@@ -308,21 +303,21 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     if "Message is not modified" in str(e):
                         await query.answer("تم التحديث: الإشارة لا تزال مستمرة.")
 
-                # تشغيل مؤقت التنبيه بانتهاء الصفقة
+                # تشغيل مؤقت التنبيه بانتهاء الصفقة بشكل آمن وموثوق عبر asyncio.create_task
                 if "CALL" in signal_str or "PUT" in signal_str:
                     seconds_map = {"1m": 60, "2m": 120, "5m": 300}
                     wait_seconds = seconds_map.get(tf_code, 60)
                     chat_id = query.message.chat_id
 
-                    context.job_queue.run_once(
-                        notify_trade_finished,
-                        when=wait_seconds,
-                        data={
-                            "chat_id": chat_id,
-                            "market_name": market_name,
-                            "tf_code": tf_code,
-                            "signal": signal_str
-                        }
+                    asyncio.create_task(
+                        delayed_trade_finish(
+                            bot=context.bot,
+                            chat_id=chat_id,
+                            market_name=market_name,
+                            tf_code=tf_code,
+                            signal=signal_str,
+                            wait_seconds=wait_seconds
+                        )
                     )
 
     except Exception as err:
@@ -344,7 +339,7 @@ def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(handle_callback))
 
-    print("\nBot V2.1 is running successfully! Open Telegram and send /start")
+    print("\nBot V2.2 is running successfully! Open Telegram and send /start")
     app.run_polling()
 
 if __name__ == "__main__":
