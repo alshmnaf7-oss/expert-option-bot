@@ -4,11 +4,10 @@ import os
 
 BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "8770286973:AAHswe11b03wjkyGcym_DYnW6urLN8url5k")
 
-# قائمة الأسواق والأزواج المتاحة ورموزها العالمية (موسعة لتشمل أهم أزواج Expert Option)
+# قائمة الأسواق والأزواج المتاحة مطابقة لمنصة Expert Option
 MARKETS = {
-    # مؤشر Smarty وسلة التكنولوجيا والذكاء الاصطناعي (AI & Tech)
-    "🤖 مؤشر سمارتي (Smarty AI Tech)": "AIQ",
-    "⚡ مؤشر الروبوتات والذكاء (BOTZ)": "BOTZ",
+    # سوق Smarty المباشر
+    "🤖 Smarty": "AIQ",
 
     # العملات الرئيسية (Forex)
     "🇪🇺/🇺🇸 EUR/USD": "EURUSD=X",
@@ -22,15 +21,15 @@ MARKETS = {
     "🇪🇺/🇬🇧 EUR/GBP": "EURGBP=X",
     
     # العملات الرقمية (Crypto)
-    "₿ البيتكوين (BTC/USD)": "BTC-USD",
-    "💎 الإيثيريوم (ETH/USD)": "ETH-USD",
-    "☀️ سولانا (SOL/USD)": "SOL-USD",
+    "₿ Bitcoin": "BTC-USD",
+    "💎 Ethereum": "ETH-USD",
+    "☀️ Solana": "SOL-USD",
 
-    # الأسهم والشركات العالمية في Expert Option
-    "🍏 سهم أبل (Apple)": "AAPL",
-    "🚗 سهم تسلا (Tesla)": "TSLA",
-    "📦 سهم أمازون (Amazon)": "AMZN",
-    "💻 سهم إنفيديا (NVIDIA)": "NVDA"
+    # الأسهم الأكثر تداولاً
+    "🍏 Apple": "AAPL",
+    "🚗 Tesla": "TSLA",
+    "📦 Amazon": "AMZN",
+    "💻 NVIDIA": "NVDA"
 }
 
 # مدد الصفقات المتاحة
