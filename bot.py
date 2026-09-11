@@ -65,7 +65,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """عرض رسالة الترحيب وقائمة الأسواق"""
     reply_markup = get_markets_keyboard()
     welcome_text = (
-        "🤖 *بوت توصيات تداول Expert Option (الإصدار الاحترافي V2.2)*\n\n"
+        "🤖 *بوت توصيات تداول Expert Option (الإصدار الاحترافي V4.0)*\n\n"
+        "⚡ *تحليل فوري فائق السرعة + توقيت الدخول الدقيق بالشواني*\n\n"
         "👋 مرحباً بك! لاختيار أفضل صفقة جاهزة الآن اضغط على:\n"
         "👉 *[🔥 أفضل الأسواق للتداول الآن]*\n\n"
         "أو اختر السوق مباشرة من القائمة بالأسفل:"
@@ -266,6 +267,9 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 return
 
             # حالة التذبذب
+            timing_info = result.get("timing", {})
+            timing_str = timing_info.get("advice", "")
+
             if result.get("status") == "ranging":
                 ranging_msg = (
                     "⚠️ *تنبيه: السوق في حالة تذبذب حالياً!* ⚠️\n\n"
@@ -273,6 +277,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     f"⏱ *الفريم:* `{tf_code}`\n"
                     f"📉 *قوة الاتجاه (ADX):* `{result['adx']}` (خامل / ضعيف ❌)\n"
                     f"📊 *مؤشر الزخم (RSI):* `{result['rsi']}`\n\n"
+                    f"⏱ *توقيت الشمعة:* {timing_str}\n\n"
                     "🚫 *القرار والتحليل:*\n"
                     f"{result['message']}\n\n"
                     "👉 *اضغط على زر (أفضل الأسواق) بالأسفل لاقتراح زوج نشط وفيه اتجاه صريح.*"
@@ -287,13 +292,13 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             else:
                 signal_str = result['signal']
                 signal_msg = (
-                    "🎯 *توصية تداول عالية الدقة - Expert Option*\n\n"
+                    "🎯 *توصية تداول عالية الدقة - Expert Option V4.0*\n\n"
                     f"🔹 *الزوج:* `{market_name}`\n"
                     f"⏱ *مدة الصفقة:* `{tf_code}`\n"
                     f"📢 *الإشارة:* *{signal_str}*\n"
                     f"💪 *قوة الفرصة:* `{result['strength']}`\n"
-                    f"📉 *مؤشر ADX:* `{result['adx']}`\n"
-                    f"📊 *مؤشر RSI:* `{result['rsi']}`\n\n"
+                    f"📉 *مؤشر ADX:* `{result['adx']}` | 📊 *مؤشر RSI:* `{result['rsi']}`\n\n"
+                    f"⏱ *توقيت الدخول الحاسم (Expert Option):*\n{timing_str}\n\n"
                     f"💡 *التوجيه الاحترافي:* {result['tip']}\n\n"
                     "⏳ _تم تشغيل مؤقت الصفقة تلقائياً، وسيرسل لك البوت تنبيهاً فور انتهائها._"
                 )
@@ -330,16 +335,38 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception:
             pass
 
+async def background_cache_updater():
+    """تحديث دوري سريع في الخلفية لأهم الأسواق لتكون الاستجابة فورية بأقل من ثانية"""
+    popular = ["EURUSD=X", "GBPUSD=X", "BTC-USD", "AIQ", "JPY=X"]
+    while True:
+        try:
+            for sym in popular:
+                await asyncio.to_thread(analyze_market, sym, "1m")
+                await asyncio.sleep(1)
+        except Exception:
+            pass
+        await asyncio.sleep(15)
+
+async def auto_clean_shutdown():
+    """إنهاء البوت بشكل نظيف بعد 330 دقيقة قبل انتهاء مهلة الـ 350 دقيقة لتجنب رسائل الخطأ من جيت هب"""
+    await asyncio.sleep(330 * 60)
+    logger.info("Restart cycle reached (330 mins). Clean exit code 0.")
+    os._exit(0)
+
+async def on_startup(application: Application):
+    asyncio.create_task(background_cache_updater())
+    asyncio.create_task(auto_clean_shutdown())
+
 def main():
     if not BOT_TOKEN:
         print("ERROR: BOT_TOKEN is missing in config.py")
         return
 
-    app = Application.builder().token(BOT_TOKEN).concurrent_updates(True).build()
+    app = Application.builder().token(BOT_TOKEN).post_init(on_startup).concurrent_updates(True).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(handle_callback))
 
-    print("\nBot V2.2 is running successfully! Open Telegram and send /start")
+    print("\nBot V4.0 is running successfully! Open Telegram and send /start")
     app.run_polling()
 
 if __name__ == "__main__":
