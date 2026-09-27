@@ -308,10 +308,23 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     if "Message is not modified" in str(e):
                         await query.answer("تم التحديث: الإشارة لا تزال مستمرة.")
 
-                # تشغيل مؤقت التنبيه بانتهاء الصفقة بشكل آمن وموثوق عبر asyncio.create_task
+                # تشغيل مؤقت التنبيه بانتهاء الصفقة متزامن بدقة مع توقيت دخول الشمعة
                 if "CALL" in signal_str or "PUT" in signal_str:
                     seconds_map = {"1m": 60, "2m": 120, "5m": 300}
-                    wait_seconds = seconds_map.get(tf_code, 60)
+                    tf_duration = seconds_map.get(tf_code, 60)
+                    
+                    # حساب وقت الانتظار الحقيقي المتزامن مع الشمعة
+                    timing_info = result.get("timing", {})
+                    sec_left = timing_info.get("seconds_left", 0)
+                    urgency = timing_info.get("urgency", "enter_now")
+
+                    if urgency in ["wait", "prepare"]:
+                        # المستخدم سينتظر حتى بداية الشمعة القادمة، ثم تبدأ مدة الصفقة
+                        wait_seconds = sec_left + tf_duration
+                    else:
+                        # المستخدم دخل مع بداية الشمعة الحالية فوراً
+                        wait_seconds = max(tf_duration - timing_info.get("seconds_passed", 0), 10)
+
                     chat_id = query.message.chat_id
 
                     asyncio.create_task(
