@@ -17,7 +17,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.error import BadRequest
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 from config import BOT_TOKEN, MARKETS, TIMEFRAMES, ADX_RANGING_THRESHOLD
-from analysis import analyze_market
+from analysis import analyze_market, get_current_price
 from market_scanner import scan_best_markets
 
 logging.basicConfig(
@@ -93,9 +93,68 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="Markdown"
         )
 
-async def delayed_trade_finish(bot, chat_id: int, market_name: str, tf_code: str, signal: str, wait_seconds: int):
-    """مؤقت غير متزامن مستقل وآمن 100% لإرسال تنبيه انتهاء الصفقة بدون الحاجة لـ JobQueue"""
+async def delayed_trade_finish(bot, chat_id: int, market_name: str, symbol: str, tf_code: str, signal: str, entry_price: float, wait_seconds: int):
+    """مؤقت غير متزامن مستقل وآمن 100% لفحص نتيجة الصفقة (ربح أو خسارة) بدقة عند انتهائها"""
     await asyncio.sleep(wait_seconds)
+
+    exit_price = None
+    if symbol:
+        try:
+            exit_price = await asyncio.wait_for(asyncio.to_thread(get_current_price, symbol), timeout=8.0)
+        except Exception as e:
+            logger.warning(f"Could not fetch exit price for {symbol}: {e}")
+
+    outcome_str = ""
+    price_details = ""
+
+    if entry_price is not None and exit_price is not None:
+        diff = exit_price - entry_price
+        diff_str = f"{abs(diff):.4f}"
+
+        if "CALL" in signal:
+            if diff > 0.00001:
+                outcome_str = "🎉 *نتيجة الصفقة: رابحة بنجاح!* (WIN) 🟢"
+                price_details = (
+                    f"📌 *سعر الدخول:* `{entry_price}`\n"
+                    f"🏁 *سعر الإغلاق:* `{exit_price}`\n"
+                    f"📈 *حركة السعر:* صعود بمقدار `+{diff_str}` لصالحك ✅"
+                )
+            elif diff < -0.00001:
+                outcome_str = "⚠️ *نتيجة الصفقة: خاسرة* (LOSS) 🔴"
+                price_details = (
+                    f"📌 *سعر الدخول:* `{entry_price}`\n"
+                    f"🏁 *سعر الإغلاق:* `{exit_price}`\n"
+                    f"📉 *حركة السعر:* هبوط بمقدار `-{diff_str}` ضد الصفقة ❌"
+                )
+            else:
+                outcome_str = "⚪ *نتيجة الصفقة: تعادل (استرداد)* 🤝"
+                price_details = (
+                    f"📌 *سعر الدخول:* `{entry_price}`\n"
+                    f"🏁 *سعر الإغلاق:* `{exit_price}`\n"
+                    "⚖️ *حركة السعر:* استقر السعر عند نفس النقطة تماماً."
+                )
+        elif "PUT" in signal:
+            if diff < -0.00001:
+                outcome_str = "🎉 *نتيجة الصفقة: رابحة بنجاح!* (WIN) 🟢"
+                price_details = (
+                    f"📌 *سعر الدخول:* `{entry_price}`\n"
+                    f"🏁 *سعر الإغلاق:* `{exit_price}`\n"
+                    f"📉 *حركة السعر:* هبوط بمقدار `-{diff_str}` لصالحك ✅"
+                )
+            elif diff > 0.00001:
+                outcome_str = "⚠️ *نتيجة الصفقة: خاسرة* (LOSS) 🔴"
+                price_details = (
+                    f"📌 *سعر الدخول:* `{entry_price}`\n"
+                    f"🏁 *سعر الإغلاق:* `{exit_price}`\n"
+                    f"📈 *حركة السعر:* صعود بمقدار `+{diff_str}` ضد الصفقة ❌"
+                )
+            else:
+                outcome_str = "⚪ *نتيجة الصفقة: تعادل (استرداد)* 🤝"
+                price_details = (
+                    f"📌 *سعر الدخول:* `{entry_price}`\n"
+                    f"🏁 *سعر الإغلاق:* `{exit_price}`\n"
+                    "⚖️ *حركة السعر:* استقر السعر عند نفس النقطة تماماً."
+                )
 
     action_buttons = [
         [InlineKeyboardButton("🔄 فحص نفس السوق لصفقة جديدة", callback_data=f"tf:{tf_code}:{market_name}")],
@@ -104,14 +163,26 @@ async def delayed_trade_finish(bot, chat_id: int, market_name: str, tf_code: str
     ]
     reply_markup = InlineKeyboardMarkup(action_buttons)
 
-    finished_msg = (
-        "⏰ *انتهت مدة الصفقة الآن!* 🏁\n\n"
-        f"🔹 *الزوج:* `{market_name}`\n"
-        f"⏱ *المدة المنتهية:* `{tf_code}`\n"
-        f"📢 *الصفقة السابقة:* {signal}\n\n"
-        "💡 *الخطوة التالية:*\n"
-        "اضغط على زر *إعادة الفحص* أو *أفضل الأسواق* لمعرفة الفرصة القادمة مباشرة!"
-    )
+    if outcome_str:
+        finished_msg = (
+            "⏰ *انتهت مدة الصفقة الآن!* 🏁\n\n"
+            f"{outcome_str}\n\n"
+            f"🔹 *الزوج:* `{market_name}`\n"
+            f"⏱ *المدة:* `{tf_code}`\n"
+            f"📢 *نوع الصفقة:* {signal}\n\n"
+            f"{price_details}\n\n"
+            "💡 *الخطوة التالية:*\n"
+            "اضغط على زر *إعادة الفحص* أو *أفضل الأسواق* لمعرفة الفرصة القادمة مباشرة!"
+        )
+    else:
+        finished_msg = (
+            "⏰ *انتهت مدة الصفقة الآن!* 🏁\n\n"
+            f"🔹 *الزوج:* `{market_name}`\n"
+            f"⏱ *المدة المنتهية:* `{tf_code}`\n"
+            f"📢 *الصفقة السابقة:* {signal}\n"
+            f"📌 *سعر الدخول:* `{entry_price if entry_price else 'غير متوفر'}`\n\n"
+            "💡 راجع منصة Expert Option لمعرفة نتيجتك، واضغط بالأسفل للصفقة القادمة:"
+        )
 
     try:
         await bot.send_message(
@@ -291,16 +362,18 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             # حالة وجود اتجاه وفرصة
             else:
                 signal_str = result['signal']
+                entry_p = result.get('price', '')
                 signal_msg = (
                     "🎯 *توصية تداول عالية الدقة - Expert Option V5.0*\n\n"
                     f"🔹 *الزوج:* `{market_name}`\n"
                     f"⏱ *مدة الصفقة:* `{tf_code}`\n"
                     f"📢 *الإشارة:* *{signal_str}*\n"
+                    f"📌 *سعر الدخول المقترح:* `{entry_p}`\n"
                     f"💪 *قوة الفرصة:* `{result['strength']}`\n"
                     f"📉 *مؤشر ADX:* `{result['adx']}` | 📊 *مؤشر RSI:* `{result['rsi']}`\n\n"
                     f"⏱ *توقيت الدخول الحاسم (Expert Option):*\n{timing_str}\n\n"
                     f"💡 *التوجيه الاحترافي:* {result['tip']}\n\n"
-                    "⏳ _تم تشغيل مؤقت الصفقة تلقائياً، وسيرسل لك البوت تنبيهاً فور انتهائها._"
+                    "⏳ _تم تشغيل مؤقت الصفقة، وسيرسل لك البوت إشعار النتيجة تلقائياً (ربح أو خسارة) فور انتهائها._"
                 )
                 try:
                     await query.edit_message_text(signal_msg, reply_markup=reply_markup, parse_mode="Markdown")
@@ -332,8 +405,10 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                             bot=context.bot,
                             chat_id=chat_id,
                             market_name=market_name,
+                            symbol=symbol,
                             tf_code=tf_code,
                             signal=signal_str,
+                            entry_price=result.get("price"),
                             wait_seconds=wait_seconds
                         )
                     )
