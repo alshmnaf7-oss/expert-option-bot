@@ -1,23 +1,14 @@
 import datetime
 from concurrent.futures import ThreadPoolExecutor
-from analysis import analyze_market
+from analysis import analyze_market, get_market_status
 from config import MARKETS
 
 def scan_best_markets(interval: str = "1m") -> list:
     """
-    فحص الأسواق المفتوحة والنشطة حالياً بالتوازي:
-    في الويكند (السبت والأحد): فحص العملات الرقمية الحية المفتوحة 24/7 فقط
-    في أيام الأسبوع (الإثنين - الجمعة): فحص جميع الأسواق والذهب والفوركس
+    فحص الأسواق المفتوحة والنشطة حالياً بالتوازي عبر التحقق التلقائي من حالة فتح السوق
     """
     best_opportunities = []
-
-    # فحص عطلة نهاية الأسبوع (5: السبت، 6: الأحد)
-    is_weekend = datetime.datetime.now(datetime.timezone.utc).weekday() in [5, 6]
-
-    if is_weekend:
-        target_markets = {k: v for k, v in MARKETS.items() if "-USD" in v}
-    else:
-        target_markets = MARKETS
+    target_markets = {k: v for k, v in MARKETS.items() if get_market_status(v)["is_open"]}
 
     def check_one(name, symbol):
         try:
