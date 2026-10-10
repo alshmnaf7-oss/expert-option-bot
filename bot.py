@@ -350,7 +350,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def background_cache_updater():
     """تحديث دوري سريع في الخلفية لأهم الأسواق لتكون الاستجابة فورية بأقل من ثانية"""
-    popular = ["BTC-USD", "ETH-USD", "SOL-USD", "EURUSD=X", "GBPUSD=X", "GC=F"]
+    popular = ["BTC-USD", "ETH-USD", "SOL-USD", "XRP-USD", "GC=F", "EURUSD=X"]
     while True:
         try:
             for sym in popular:
