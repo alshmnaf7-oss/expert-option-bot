@@ -4,24 +4,20 @@ import os
 
 BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 
-# قائمة الأسواق والأزواج المتاحة والمطابقة 100% لمنصة Expert Option
+# قائمة الأسواق والأزواج المتاحة والمطابقة 100% لمنصة Expert Option (تقبل دقيقة واحدة دائماً)
 MARKETS = {
-    # العملات الرقمية الحقيقية (مفتوحة 24/7 طوال الأسبوع والويكند)
+    # العملات الرقمية الحقيقية (مفتوحة 24/7 طوال الأسبوع والويكند بدون أي إغلاق)
     "₿ Bitcoin": "BTC-USD",
     "💎 Ethereum": "ETH-USD",
     "☀️ Solana": "SOL-USD",
+    "⚡ Ripple": "XRP-USD",
+    "🐕 Dogecoin": "DOGE-USD",
+    "🪙 Litecoin": "LTC-USD",
+    "🔹 Cardano": "ADA-USD",
 
-    # الذهب والعملات العالمية (مفتوحة من الإثنين إلى الجمعة)
+    # الذهب واليورو/دولار (مفتوحة من الإثنين إلى الجمعة)
     "🥇 الذهب (Gold)": "GC=F",
-    "🇪🇺/🇺🇸 EUR/USD": "EURUSD=X",
-    "🇬🇧/🇺🇸 GBP/USD": "GBPUSD=X",
-    "🇺🇸/🇯🇵 USD/JPY": "JPY=X",
-    "🇦🇺/🇺🇸 AUD/USD": "AUDUSD=X",
-    "🇺🇸/🇨🇦 USD/CAD": "CAD=X",
-    "🇺🇸/🇨🇭 USD/CHF": "USDCHF=X",
-    "🇪🇺/🇯🇵 EUR/JPY": "EURJPY=X",
-    "🇬🇧/🇯🇵 GBP/JPY": "GBPJPY=X",
-    "🇪🇺/🇬🇧 EUR/GBP": "EURGBP=X"
+    "🇪🇺/🇺🇸 EUR/USD": "EURUSD=X"
 }
 
 # مدد الصفقات المتاحة
