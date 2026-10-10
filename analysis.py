@@ -34,44 +34,23 @@ def get_candle_timing() -> dict:
 
 def get_market_status(symbol: str) -> dict:
     """
-    التحقق من حالة فتح وإغلاق السوق في منصة Expert Option:
-    - العملات الرقمية الأساسية (BTC, ETH, XRP): مفتوحة 24/7 دائماً
-    - العملات الرقمية الثانوية (SOL, DOGE, ADA): تغلق السبت وتفتح في المنصة الأحد بعد الظهر (العصر)
-    - Litecoin: يغلق في عطلة نهاية الأسبوع ويفتح صباح الإثنين
-    - الذهب واليورو/دولار: تغلق السبت والأحد وتفتح فجر الإثنين
+    التحقق من حالة فتح وإغلاق السوق:
+    - جميع العملات الرقمية (BTC, ETH, SOL, XRP, DOGE, LTC, ADA): مفتوحة ونشطة 24/7 طوال الوقت
+    - الذهب واليورو/دولار (GC=F, EURUSD=X): تغلق السبت والأحد وتفتح فجر الإثنين
     """
     now_utc = datetime.datetime.now(datetime.timezone.utc)
     weekday = now_utc.weekday()  # 5: Saturday, 6: Sunday
-    hour_utc = now_utc.hour
 
-    # 1. العملات المفتوحة 24/7 طوال الأسبوع
-    if symbol in ["BTC-USD", "ETH-USD", "XRP-USD"]:
+    # 1. جميع العملات الرقمية الـ 7 مفتوحة 24/7 دائماً
+    if "-USD" in symbol:
         return {"is_open": True}
 
-    # 2. الذهب والفوركس (مغلقة السبت والأحد بالكامل في البورصة العالمية)
+    # 2. الذهب والفوركس (مغلقة السبت والأحد في البورصة العالمية)
     if symbol in ["GC=F", "EURUSD=X"]:
         if weekday in [5, 6]:
             return {
                 "is_open": False,
-                "message": "🔒 *هذا السوق مغلق حالياً في عطلة نهاية الأسبوع (السبت والأحد).*\n\n⏳ يفتح للتداول تلقائياً فجر يوم الإثنين.\n👉 يمكنك التداول الآن في العملات الرقمية المفتوحة 24/7: Bitcoin أو Ethereum أو Ripple."
-            }
-        return {"is_open": True}
-
-    # 3. Litecoin (غير متاح في الويكند في منصة Expert Option)
-    if symbol == "LTC-USD":
-        if weekday in [5, 6]:
-            return {
-                "is_open": False,
-                "message": "🔒 *سوق Litecoin غير متاح للتداول في منصة Expert Option خلال عطلة نهاية الأسبوع.*\n\n⏳ يفتح للتداول صباح يوم الإثنين.\n👉 يمكنك التداول الآن في العملات المتاحة: Bitcoin أو Ethereum أو Ripple."
-            }
-        return {"is_open": True}
-
-    # 4. Solana و Dogecoin و Cardano (تغلق السبت وتفتح في المنصة عصر الأحد)
-    if symbol in ["SOL-USD", "DOGE-USD", "ADA-USD"]:
-        if weekday == 5 or (weekday == 6 and hour_utc < 12):
-            return {
-                "is_open": False,
-                "message": "🔒 *هذا السوق مغلق حالياً في منصة Expert Option.*\n\n⏳ يفتح للتداول غداً الأحد بعد الظهر (العصر).\n👉 يمكنك التداول الآن في العملات المفتوحة والنشطة حالياً: Bitcoin أو Ethereum أو Ripple."
+                "message": "🔒 *هذا السوق مغلق حالياً في عطلة نهاية الأسبوع (السبت والأحد).*\n\n⏳ يفتح للتداول تلقائياً فجر يوم الإثنين.\n👉 يمكنك التداول الآن في جميع العملات الرقمية المفتوحة 24/7: Bitcoin، Ethereum، Solana، Ripple، Dogecoin، Litecoin، Cardano."
             }
         return {"is_open": True}
 
