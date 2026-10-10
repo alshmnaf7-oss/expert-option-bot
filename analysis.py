@@ -60,7 +60,7 @@ def analyze_market(symbol: str, interval: str) -> dict:
         if diff_minutes > 45:
             return {
                 'status': 'error',
-                'message': 'هذا السوق مغلق حالياً في البورصة العالمية (تفتح البورصات صباح الإثنين). الأسواق المفتوحة والنشطة حالياً 24/7 طوال عطلة نهاية الأسبوع هي العملات الرقمية فقط: Bitcoin و Ethereum و Solana.'
+                'message': 'هذا السوق مغلق حالياً في البورصة العالمية (تفتح البورصات صباح الإثنين). الأسواق المفتوحة والنشطة حالياً 24/7 طوال عطلة نهاية الأسبوع في المنصة هي: Bitcoin و Ethereum و Ripple.'
             }
 
         close = df['Close']
