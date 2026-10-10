@@ -17,7 +17,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.error import BadRequest
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 from config import BOT_TOKEN, MARKETS, TIMEFRAMES, ADX_RANGING_THRESHOLD
-from analysis import analyze_market
+from analysis import analyze_market, get_market_status
 from market_scanner import scan_best_markets
 
 logging.basicConfig(
@@ -47,13 +47,15 @@ def start_health_server():
 threading.Thread(target=start_health_server, daemon=True).start()
 
 def get_markets_keyboard():
-    """توليد لوحة أزرار الأسواق مع زر المسح لأفضل الأسواق"""
+    """توليد لوحة أزرار الأسواق مع إظهار علامة القفل للأسواق المغلقة حالياً وزر المسح لأفضل الأسواق"""
     keyboard = [
         [InlineKeyboardButton("🔥 أفضل الأسواق للتداول الآن (فرص مؤكدة) 🔥", callback_data="scan_best")]
     ]
     row = []
-    for name in MARKETS.keys():
-        row.append(InlineKeyboardButton(name, callback_data=f"market:{name}"))
+    for name, sym in MARKETS.items():
+        status = get_market_status(sym)
+        label = name if status["is_open"] else f"{name} 🔒"
+        row.append(InlineKeyboardButton(label, callback_data=f"market:{name}"))
         if len(row) == 2:
             keyboard.append(row)
             row = []
@@ -198,6 +200,23 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # 3. اختيار السوق
         if data.startswith("market:"):
             market_name = data.split("market:", 1)[1]
+            symbol = MARKETS.get(market_name, "")
+
+            # فحص فوري لحالة فتح السوق وإبلاغ المتداول إذا كان مغلقاً
+            status_info = get_market_status(symbol)
+            if not status_info["is_open"]:
+                keyboard = [
+                    [InlineKeyboardButton("🔥 أفضل الأسواق المفتوحة للتداول الآن", callback_data="scan_best")],
+                    [InlineKeyboardButton("🔙 رجوع لقائمة الأسواق", callback_data="back_to_markets")]
+                ]
+                await query.edit_message_text(
+                    f"⚠️ *تنبيه إغلاق السوق:* `{market_name}`\n\n"
+                    f"{status_info['message']}",
+                    reply_markup=InlineKeyboardMarkup(keyboard),
+                    parse_mode="Markdown"
+                )
+                return
+
             context.user_data["selected_market"] = market_name
 
             keyboard = []
@@ -349,11 +368,11 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             pass
 
 async def background_cache_updater():
-    """تحديث دوري سريع في الخلفية لأهم الأسواق لتكون الاستجابة فورية بأقل من ثانية"""
-    popular = ["BTC-USD", "ETH-USD", "XRP-USD", "GC=F", "EURUSD=X"]
+    """تحديث دوري سريع في الخلفية للأسواق المفتوحة فقط لتكون الاستجابة فورية بأقل من ثانية"""
     while True:
         try:
-            for sym in popular:
+            open_symbols = [sym for sym in MARKETS.values() if get_market_status(sym)["is_open"]]
+            for sym in open_symbols:
                 await asyncio.to_thread(analyze_market, sym, "1m")
                 await asyncio.sleep(1)
         except Exception:
