@@ -241,3 +241,14 @@ def analyze_market(symbol: str, interval: str) -> dict:
 
     except Exception as e:
         return {'status': 'error', 'message': f'حدث خطأ أثناء التحليل: {str(e)}'}
+
+def get_current_price(symbol: str):
+    """جلب السعر الحي الحالي للسوق لمقارنته بنقطة الدخول وتحديد نتيجة الصفقة (ربح أو خسارة)"""
+    try:
+        ticker = yf.Ticker(symbol)
+        df = ticker.history(period='1d', interval='1m')
+        if not df.empty:
+            return round(float(df['Close'].iloc[-1]), 5)
+    except Exception:
+        pass
+    return None
