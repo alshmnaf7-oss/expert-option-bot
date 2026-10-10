@@ -6,14 +6,10 @@ BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 
 # قائمة الأسواق والأزواج المتاحة والمطابقة 100% لمنصة Expert Option (تقبل دقيقة واحدة دائماً)
 MARKETS = {
-    # العملات الرقمية الحقيقية (مفتوحة 24/7 طوال الأسبوع والويكند بدون أي إغلاق)
+    # العملات الرقمية الأساسية المفتوحة والنشطة 24/7 في Expert Option
     "₿ Bitcoin": "BTC-USD",
     "💎 Ethereum": "ETH-USD",
-    "☀️ Solana": "SOL-USD",
     "⚡ Ripple": "XRP-USD",
-    "🐕 Dogecoin": "DOGE-USD",
-    "🪙 Litecoin": "LTC-USD",
-    "🔹 Cardano": "ADA-USD",
 
     # الذهب واليورو/دولار (مفتوحة من الإثنين إلى الجمعة)
     "🥇 الذهب (Gold)": "GC=F",
