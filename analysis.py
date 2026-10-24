@@ -6,6 +6,7 @@ from ta.trend import ADXIndicator, EMAIndicator, MACD
 from ta.momentum import RSIIndicator, StochasticOscillator
 from ta.volatility import BollingerBands
 from config import ADX_RANGING_THRESHOLD
+from smarty_feed import fetch_smarty_df
 
 CACHE = {}
 CACHE_TTL = 20
@@ -41,8 +42,8 @@ def get_market_status(symbol: str) -> dict:
     now_utc = datetime.datetime.now(datetime.timezone.utc)
     weekday = now_utc.weekday()  # 5: Saturday, 6: Sunday
 
-    # 1. جميع العملات الرقمية الـ 7 مفتوحة 24/7 دائماً
-    if "-USD" in symbol:
+    # 1. سوق سمارتي وجميع العملات الرقمية الـ 7 مفتوحة 24/7 دائماً
+    if symbol == "EXPERT_SMARTY" or "-USD" in symbol:
         return {"is_open": True}
 
     # 2. الذهب والفوركس (مغلقة السبت والأحد في البورصة العالمية)
@@ -50,7 +51,7 @@ def get_market_status(symbol: str) -> dict:
         if weekday in [5, 6]:
             return {
                 "is_open": False,
-                "message": "🔒 *هذا السوق مغلق حالياً في عطلة نهاية الأسبوع (السبت والأحد).*\n\n⏳ يفتح للتداول تلقائياً فجر يوم الإثنين.\n👉 يمكنك التداول الآن في جميع العملات الرقمية المفتوحة 24/7: Bitcoin، Ethereum، Solana، Ripple، Dogecoin، Litecoin، Cardano."
+                "message": "🔒 *هذا السوق مغلق حالياً في عطلة نهاية الأسبوع (السبت والأحد).*\n\n⏳ يفتح للتداول تلقائياً فجر يوم الإثنين.\n👉 يمكنك التداول الآن في جميع العملات الرقمية وسوق سمارتي المفتوحة 24/7."
             }
         return {"is_open": True}
 
@@ -74,25 +75,33 @@ def analyze_market(symbol: str, interval: str) -> dict:
             return cached_data
 
     try:
-        ticker = yf.Ticker(symbol)
-        period = '1d' if interval in ['1m', '2m', '5m'] else '5d'
-        df = ticker.history(period=period, interval=interval)
+        if symbol == "EXPERT_SMARTY":
+            df = fetch_smarty_df()
+            if df is None or len(df) < 20:
+                return {
+                    'status': 'error',
+                    'message': 'تعذر جلب شموع سمارتي الحية حالياً عبر اتصال المنصة (قد تكون جلسة التوكن منتهية). يرجى التداول في العملات الرقمية المفتوحة أو تجديد التوكن.'
+                }
+        else:
+            ticker = yf.Ticker(symbol)
+            period = '1d' if interval in ['1m', '2m', '5m'] else '5d'
+            df = ticker.history(period=period, interval=interval)
 
-        if df.empty or len(df) < 30:
-            return {
-                'status': 'error',
-                'message': 'تعذر سحب بيانات كافية لهذا السوق حالياً. قد يكون السوق مغلقاً أو خارج ساعات التداول.'
-            }
+            if df.empty or len(df) < 30:
+                return {
+                    'status': 'error',
+                    'message': 'تعذر سحب بيانات كافية لهذا السوق حالياً. قد يكون السوق مغلقاً أو خارج ساعات التداول.'
+                }
 
-        last_candle_time = df.index[-1].to_pydatetime()
-        now_utc = datetime.datetime.now(datetime.timezone.utc)
-        diff_minutes = (now_utc - last_candle_time).total_seconds() / 60
+            last_candle_time = df.index[-1].to_pydatetime()
+            now_utc = datetime.datetime.now(datetime.timezone.utc)
+            diff_minutes = (now_utc - last_candle_time).total_seconds() / 60
 
-        if diff_minutes > 45:
-            return {
-                'status': 'error',
-                'message': 'هذا السوق مغلق حالياً في البورصة العالمية (تفتح البورصات صباح الإثنين). الأسواق المفتوحة والنشطة حالياً 24/7 طوال عطلة نهاية الأسبوع في المنصة هي: Bitcoin و Ethereum و Ripple.'
-            }
+            if diff_minutes > 45:
+                return {
+                    'status': 'error',
+                    'message': 'هذا السوق مغلق حالياً في البورصة العالمية (تفتح البورصات صباح الإثنين). الأسواق المفتوحة والنشطة حالياً 24/7 طوال عطلة نهاية الأسبوع في المنصة هي العملات الرقمية وسوق Smarty.'
+                }
 
         close = df['Close']
         high = df['High']
@@ -274,12 +283,17 @@ def analyze_market(symbol: str, interval: str) -> dict:
         return {'status': 'error', 'message': f'حدث خطأ أثناء التحليل: {str(e)}'}
 
 def get_current_price(symbol: str):
-    """جلب السعر الحي الحالي للسوق لمقارنته بنقطة الدخول وتحديد نتيجة الصفقة (ربح أو خسارة)"""
+    """جلب السعر الحي الحالي للسوق لمقارنته بنقطة الدخول"""
     try:
-        ticker = yf.Ticker(symbol)
-        df = ticker.history(period='1d', interval='1m')
-        if not df.empty:
-            return round(float(df['Close'].iloc[-1]), 5)
+        if symbol == "EXPERT_SMARTY":
+            df = fetch_smarty_df()
+            if df is not None and not df.empty:
+                return round(float(df['Close'].iloc[-1]), 4)
+        else:
+            ticker = yf.Ticker(symbol)
+            df = ticker.history(period='1d', interval='1m')
+            if not df.empty:
+                return round(float(df['Close'].iloc[-1]), 5)
     except Exception:
         pass
     return None
