@@ -4,8 +4,13 @@ on:
   push:
     branches: [ "main" ]
   schedule:
-    - cron: "0 */5 * * *"
+    # صمام أمان يفحص ويعيد تشغيل البوت كل ساعة في حال حدوث أي طارئ
+    - cron: "0 * * * *"
   workflow_dispatch:
+
+concurrency:
+  group: expert-option-bot-runner
+  cancel-in-progress: false
 
 jobs:
   run-bot:
@@ -23,9 +28,29 @@ jobs:
       - name: Install requirements
         run: pip install -r requirements.txt
 
+      - name: Cancel duplicate runs
+        env:
+          GH_PAT: ${{ secrets.GH_PAT }}
+        run: |
+          python cleanup_runs.py || true
+
       - name: Run Telegram Bot
-        timeout-minutes: 355
+        timeout-minutes: 320
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          EXPERT_OPTION_TOKEN: ${{ secrets.EXPERT_OPTION_TOKEN }}
+          GH_PAT: ${{ secrets.GH_PAT }}
         run: |
           python bot.py || true
+
+      - name: Auto-Relay to Next Runner (Zero Downtime)
+        if: always()
+        env:
+          GH_PAT: ${{ secrets.GH_PAT }}
+        run: |
+          echo "Handing over to the next runner immediately..."
+          curl -s -X POST \
+            -H "Accept: application/vnd.github.v3+json" \
+            -H "Authorization: token $GH_PAT" \
+            https://api.github.com/repos/${{ github.repository }}/actions/workflows/run_bot.yml/dispatches \
+            -d '{"ref":"main"}' || true
