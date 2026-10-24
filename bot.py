@@ -380,9 +380,9 @@ async def background_cache_updater():
         await asyncio.sleep(15)
 
 async def auto_clean_shutdown():
-    """إنهاء البوت بشكل نظيف بعد 330 دقيقة قبل انتهاء مهلة الـ 350 دقيقة لتجنب رسائل الخطأ من جيت هب"""
-    await asyncio.sleep(330 * 60)
-    logger.info("Restart cycle reached (330 mins). Clean exit code 0.")
+    """إنهاء البوت بشكل نظيف بعد 300 دقيقة (5 ساعات) لتبديل السيرفر تلقائياً بدون انقطاع"""
+    await asyncio.sleep(300 * 60)
+    logger.info("Restart cycle reached (300 mins). Clean exit code 0.")
     os._exit(0)
 
 async def on_startup(application: Application):
