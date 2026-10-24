@@ -3,17 +3,25 @@ import ssl
 import json
 import time
 import logging
+import threading
 import pandas as pd
 from config import EXPERT_TOKEN
 
 logger = logging.getLogger(__name__)
 
 SMARTY_CACHE = {"ts": 0, "df": None}
-SMARTY_CACHE_TTL = 15  # كاش لمدة 15 ثانية لتسريع الاستجابة وعدم الضغط على سيرفر المنصة
+SMARTY_CACHE_TTL = 15  # كاش لمدة 15 ثانية لتسريع الاستجابة وحماية الاتصال
 
-def fetch_smarty_df(token=None, candle_count=45):
+ENDPOINTS = [
+    "wss://fr24g1eu.expertoption.com/",
+    "wss://fr24g1eu.expertoption.finance/ws/v40",
+    "wss://fr24g1us.expertoption.com/"
+]
+
+def fetch_smarty_df(token=None):
     """
-    سحب الشموع الحية الأصلية لمؤشر Smarty (Asset ID: 240) مباشرة من سيرفر Expert Option عبر WebSocket
+    سحب الشموع الحية الأصلية لمؤشر Smarty (Asset ID: 240) مباشرة من خوادم Expert Option
+    عبر WebSocket.
     """
     global SMARTY_CACHE
     now = time.time()
@@ -22,103 +30,91 @@ def fetch_smarty_df(token=None, candle_count=45):
 
     use_token = token or EXPERT_TOKEN
     if not use_token:
-        logger.warning("No EXPERT_TOKEN provided.")
+        logger.warning("No EXPERT_TOKEN configured.")
         return None
 
-    url = "wss://fr24g1eu.expertoption.com/"
-    candles_received = []
+    now_ts = int(now)
+    # طلب آخر 60 دقيقة من شموع 1 دقيقة
+    history_request = {
+        "action": "assetHistoryCandles",
+        "message": {
+            "assetid": 240,
+            "periods": [[now_ts - 3600, now_ts]],
+            "timeframes": [60]
+        },
+        "token": use_token,
+        "ns": 5
+    }
 
-    def on_message(ws, raw):
+    candles_rows = []
+
+    def run_connection(url):
+        nonlocal candles_rows
+
+        def on_message(ws, raw):
+            try:
+                msg = json.loads(raw.decode('utf-8') if isinstance(raw, bytes) else raw)
+                action = msg.get("action")
+                if action == "assetHistoryCandles":
+                    candles_block = msg.get("message", {}).get("candles", [])
+                    if candles_block:
+                        tf = candles_block[0].get("tf", 60)
+                        periods = candles_block[0].get("periods", [])
+                        for p_start, c_list in periods:
+                            for i, c in enumerate(c_list):
+                                candle_ts = p_start + i * tf
+                                candles_rows.append({
+                                    "timestamp": pd.to_datetime(candle_ts, unit='s'),
+                                    "Open": float(c[0]),
+                                    "High": float(c[1]),
+                                    "Low": float(c[2]),
+                                    "Close": float(c[3]),
+                                    "Volume": 100
+                                })
+                        ws.close()
+            except Exception as e:
+                logger.error(f"Error parsing candle message: {e}")
+
+        def on_open(ws):
+            ws.send(json.dumps(history_request))
+
         try:
-            msg = json.loads(raw.decode('utf-8') if isinstance(raw, bytes) else raw)
-            action = msg.get("action")
-            
-            if action == "multipleAction":
-                for a in msg.get("message", {}).get("actions", []):
-                    if a.get("action") == "assetHistoryCandles":
-                        data_240 = a.get("message", {}).get("240", [])
-                        if data_240:
-                            candles_received.extend(data_240)
-                            ws.close()
-            elif action == "assetHistoryCandles":
-                data_240 = msg.get("message", {}).get("240", [])
-                if data_240:
-                    candles_received.extend(data_240)
-                    ws.close()
-        except Exception:
-            pass
+            ws = websocket.WebSocketApp(
+                url,
+                on_open=on_open,
+                on_message=on_message,
+                on_error=lambda ws, e: None,
+                on_close=lambda ws, c, m: None
+            )
+            t = threading.Thread(target=ws.run_forever, kwargs={"sslopt": {"cert_reqs": ssl.CERT_NONE}})
+            t.daemon = True
+            t.start()
+            t.join(timeout=5)
+            try:
+                ws.close()
+            except Exception:
+                pass
+        except Exception as e:
+            logger.warning(f"Connection to {url} failed: {e}")
 
-    def on_open(ws):
-        now_ts = int(time.time())
-        periods = []
-        for i in range(candle_count):
-            start_p = now_ts - (i + 1) * 60
-            end_p = now_ts - i * 60
-            periods.append([start_p, end_p])
-            
-        payload = {
-            "action": "multipleAction",
-            "token": use_token,
-            "v": 18,
-            "message": {
-                "token": use_token,
-                "actions": [
-                    {
-                        "action": "assetHistoryCandles",
-                        "message": {
-                            "assetid": 240,
-                            "periods": periods,
-                            "timeframes": [60]
-                        },
-                        "token": use_token,
-                        "v": 18,
-                        "ns": 101
-                    }
-                ]
-            }
-        }
-        ws.send(json.dumps(payload))
+    # محاولة الاتصال بالخادم الأساسي ثم البديل إذا لزم
+    for endpoint in ENDPOINTS:
+        run_connection(endpoint)
+        if candles_rows:
+            break
 
-    try:
-        ws = websocket.WebSocketApp(
-            url,
-            on_open=on_open,
-            on_message=on_message,
-            on_error=lambda ws, e: None,
-            on_close=lambda ws, c, m: None
-        )
-
-        import threading
-        t = threading.Thread(target=ws.run_forever, kwargs={"sslopt": {"cert_reqs": ssl.CERT_NONE}})
-        t.daemon = True
-        t.start()
-        t.join(timeout=5)
-        try:
-            ws.close()
-        except Exception:
-            pass
-    except Exception as e:
-        logger.error(f"Error connecting to ExpertOption WebSocket: {e}")
+    if not candles_rows:
+        logger.error("Failed to fetch Smarty candles from all endpoints.")
         return None
 
-    if not candles_received:
-        return None
-
-    candles_received.sort(key=lambda x: x["t"])
-    rows = []
-    for c in candles_received:
-        rows.append({
-            "timestamp": pd.to_datetime(c["t"], unit='s'),
-            "Open": float(c["o"]),
-            "High": float(c["h"]),
-            "Low": float(c["l"]),
-            "Close": float(c["c"]),
-            "Volume": 100
-        })
-
-    df = pd.DataFrame(rows)
+    df = pd.DataFrame(candles_rows)
     df.set_index("timestamp", inplace=True)
-    
+    df.sort_index(inplace=True)
+    df = df[~df.index.duplicated(keep='last')]
+
+    if len(df) < 20:
+        return None
+
     SMARTY_CACHE["ts"] = time.time()
     SMARTY_CACHE["df"] = df
     return df
