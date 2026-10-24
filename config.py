@@ -3,9 +3,13 @@ import os
 # إعدادات بوت توصيات Expert Option
 
 BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+EXPERT_TOKEN = os.environ.get("EXPERT_OPTION_TOKEN", "b7ae455450cdfe7832df64f0b820d3f0")
 
 # قائمة الأسواق والأزواج المتاحة والمطابقة 100% لمنصة Expert Option (تقبل دقيقة واحدة دائماً)
 MARKETS = {
+    # مؤشر سمارتي الحقيقي عبر اتصال الويب سوكيت المباشر مع Expert Option
+    "🤖 مؤشر سمارتي (Smarty)": "EXPERT_SMARTY",
+
     # العملات الرقمية المفتوحة للتداول في Expert Option
     "₿ Bitcoin": "BTC-USD",
     "💎 Ethereum": "ETH-USD",
