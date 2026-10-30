@@ -368,16 +368,16 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             pass
 
 async def background_cache_updater():
-    """تحديث دوري سريع في الخلفية للأسواق المفتوحة فقط لتكون الاستجابة فورية بأقل من ثانية"""
+    """تحديث دوري سريع في الخلفية لسوق سمارتي والبيتكوين لتكون الاستجابة فورية بأقل من ثانية"""
     while True:
         try:
             open_symbols = [sym for sym in MARKETS.values() if get_market_status(sym)["is_open"]]
             for sym in open_symbols:
                 await asyncio.to_thread(analyze_market, sym, "1m")
-                await asyncio.sleep(1)
+                await asyncio.sleep(2)
         except Exception:
             pass
-        await asyncio.sleep(15)
+        await asyncio.sleep(25)
 
 async def auto_clean_shutdown():
     """إنهاء البوت بشكل نظيف بعد 300 دقيقة (5 ساعات) لتبديل السيرفر تلقائياً بدون انقطاع"""
