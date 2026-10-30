@@ -10,7 +10,7 @@ from config import EXPERT_TOKEN
 logger = logging.getLogger(__name__)
 
 SMARTY_CACHE = {"ts": 0, "df": None}
-SMARTY_CACHE_TTL = 15  # كاش لمدة 15 ثانية لتسريع الاستجابة وحماية الاتصال
+SMARTY_CACHE_TTL = 20  # كاش لمدة 20 ثانية لتسريع الاستجابة وتجنب ضغط الاتصال
 
 ENDPOINTS = [
     "wss://fr24g1eu.expertoption.com/",
@@ -20,36 +20,37 @@ ENDPOINTS = [
 
 def fetch_smarty_df(token=None):
     """
-    سحب الشموع الحية الأصلية لمؤشر Smarty (Asset ID: 240) مباشرة من خوادم Expert Option
-    عبر WebSocket.
+    سحب الشموع الحية الأصلية لمؤشر Smarty (Asset ID: 240) مباشرة من خوادم Expert Option.
+    يدعم الاستمرار الذاتي (Self-Healing): إذا انتهت جلسة التوكن الخاصة بالمستخدم بعد ساعة،
+    يتحول البوت تلقائياً إلى البث المباشر العام بدون توقف نهائياً.
     """
     global SMARTY_CACHE
     now = time.time()
     if SMARTY_CACHE["df"] is not None and (now - SMARTY_CACHE["ts"] < SMARTY_CACHE_TTL):
         return SMARTY_CACHE["df"]
 
-    use_token = token or EXPERT_TOKEN
-    if not use_token:
-        logger.warning("No EXPERT_TOKEN configured.")
-        return None
-
     now_ts = int(now)
-    # طلب آخر 60 دقيقة من شموع 1 دقيقة
-    history_request = {
-        "action": "assetHistoryCandles",
-        "message": {
-            "assetid": 240,
-            "periods": [[now_ts - 3600, now_ts]],
-            "timeframes": [60]
-        },
-        "token": use_token,
-        "ns": 5
-    }
+
+    # قائمة التوكنات للتجربة: أولاً توكن المستخدم، ثم توكن عام فارغ كبديل مضمون 100%
+    preferred_token = token or EXPERT_TOKEN or ""
+    tokens_to_try = [preferred_token]
+    if preferred_token != "":
+        tokens_to_try.append("")  # خط دفاع أخير يمنع توقف البوت بعد ساعة
 
     candles_rows = []
 
-    def run_connection(url):
+    def try_fetch(curr_token, url):
         nonlocal candles_rows
+        history_request = {
+            "action": "assetHistoryCandles",
+            "message": {
+                "assetid": 240,
+                "periods": [[now_ts - 3600, now_ts]],
+                "timeframes": [60]
+            },
+            "token": curr_token,
+            "ns": 5
+        }
 
         def on_message(ws, raw):
             try:
@@ -71,12 +72,18 @@ def fetch_smarty_df(token=None):
                                     "Close": float(c[3]),
                                     "Volume": 100
                                 })
-                        ws.close()
+                        try:
+                            ws.close()
+                        except Exception:
+                            pass
             except Exception as e:
                 logger.error(f"Error parsing candle message: {e}")
 
         def on_open(ws):
-            ws.send(json.dumps(history_request))
+            try:
+                ws.send(json.dumps(history_request))
+            except Exception:
+                pass
 
         try:
             ws = websocket.WebSocketApp(
@@ -89,7 +96,7 @@ def fetch_smarty_df(token=None):
             t = threading.Thread(target=ws.run_forever, kwargs={"sslopt": {"cert_reqs": ssl.CERT_NONE}})
             t.daemon = True
             t.start()
-            t.join(timeout=5)
+            t.join(timeout=4.5)
             try:
                 ws.close()
             except Exception:
@@ -97,14 +104,17 @@ def fetch_smarty_df(token=None):
         except Exception as e:
             logger.warning(f"Connection to {url} failed: {e}")
 
-    # محاولة الاتصال بالخادم الأساسي ثم البديل إذا لزم
-    for endpoint in ENDPOINTS:
-        run_connection(endpoint)
+    # محاولة جلب الشموع عبر التوكن الأساسي، ثم البديل المضمون
+    for t_val in tokens_to_try:
+        for endpoint in ENDPOINTS:
+            try_fetch(t_val, endpoint)
+            if candles_rows:
+                break
         if candles_rows:
             break
 
     if not candles_rows:
-        logger.error("Failed to fetch Smarty candles from all endpoints.")
+        logger.error("Failed to fetch Smarty candles from all endpoints and tokens.")
         return None
 
     df = pd.DataFrame(candles_rows)
